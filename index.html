@@ -6,6 +6,7 @@
     <title>Hệ Thống Lập Dự Toán Chi Tiết</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
     <style>
         :root {
             --sidebar-width: 280px;
@@ -193,9 +194,14 @@
                 <i class="fa-solid fa-chevron-right"></i>
                 <span class="current-page" id="breadcrumb-title">Khoản 1: Thù lao tham gia thực hiện đề tài</span>
             </div>
-            <button class="btn-print" id="btnPrint" onclick="window.print()" style="display: none;">
-                <i class="fa-solid fa-print"></i> In Báo Cáo
-            </button>
+            <div style="display: flex; gap: 10px;">
+                <button id="btnExport" onclick="exportExcel()" style="display: none; background-color: #10b981; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-size: 14px; font-weight: 500; cursor: pointer; align-items: center; gap: 8px; transition: 0.2s;">
+                    <i class="fa-solid fa-file-excel"></i> Xuất Excel
+                </button>
+                <button class="btn-print" id="btnPrint" onclick="window.print()" style="display: none;">
+                    <i class="fa-solid fa-print"></i> In Báo Cáo
+                </button>
+            </div>
         </header>
         <!-- CONTAINER FOR IFRAMES (NHÚNG ẨN 6 BẢNG) -->
         <div class="content-area">
@@ -263,8 +269,9 @@
             // Ẩn tất cả views
             document.querySelectorAll('.view-wrapper').forEach(view => view.classList.remove('active'));
             
-            // Xóa nút print nếu không ở tab Tổng hợp
+            // Ẩn nút chức năng nếu không ở tab Tổng hợp
             document.getElementById('btnPrint').style.display = 'none';
+            document.getElementById('btnExport').style.display = 'none';
             // Hiện view tương ứng
             document.getElementById('view-' + tabId).classList.add('active');
             document.getElementById('breadcrumb-title').innerText = title;
@@ -273,7 +280,10 @@
         function openSummary(element) {
             switchTab('SUMMARY', element, 'Bảng Tổng Hợp Kinh Phí Đề Tài');
             document.getElementById('breadcrumb-title').style.color = '#10b981';
-            document.getElementById('btnPrint').style.display = 'flex'; // Hiện nút In
+            
+            // Hiện nút chức năng (In + Xuất Excel)
+            document.getElementById('btnPrint').style.display = 'flex'; 
+            document.getElementById('btnExport').style.display = 'flex';
             // Hiển thị Overlay Loading
             const loading = document.getElementById('loadingOverlay');
             const summaryBox = document.getElementById('summaryBox');
@@ -327,6 +337,55 @@
                     errorMsg.style.display = 'block';
                 }
             }, 500);
+        }
+        // 3. HÀM XUẤT EXCEL ĐA SHEET
+        function exportExcel() {
+            try {
+                // Khởi tạo file Excel
+                let wb = XLSX.utils.book_new();
+                // Quét 6 bảng iframe
+                config.forEach((item, index) => {
+                    const iframeDoc = document.querySelector(`#${item.id} iframe`).contentWindow.document;
+                    const originalTable = iframeDoc.querySelector('table');
+                    
+                    if(originalTable) {
+                        // BƯỚC QUAN TRỌNG: Clrone (nhân bản) bảng để tránh làm hỏng giao diện thật
+                        let clonedTable = originalTable.cloneNode(true);
+                        
+                        // Lôi giá trị từ <input> ra biến thành Text mềm
+                        let originalInputs = originalTable.querySelectorAll('input, select');
+                        let clonedInputs = clonedTable.querySelectorAll('input, select');
+                        
+                        originalInputs.forEach((inp, i) => {
+                            let textNode = document.createTextNode(inp.value);
+                            clonedInputs[i].parentNode.replaceChild(textNode, clonedInputs[i]);
+                        });
+                        // Xóa các nút bấm (như nút Xóa, + Thêm)
+                        clonedTable.querySelectorAll('button').forEach(btn => btn.remove());
+                        
+                        // Xóa chữ "Thao tác" trên Header
+                        clonedTable.querySelectorAll('th').forEach(th => {
+                            if(th.innerText.toLowerCase().includes('thao tác')) {
+                                th.innerText = "";
+                            }
+                        });
+                        // Chuyển khối HTML nàỳ thành Sheet 
+                        let ws = XLSX.utils.table_to_sheet(clonedTable, { raw: true });
+                        XLSX.utils.book_append_sheet(wb, ws, "K" + (index + 1));
+                    }
+                });
+                // Nhét Bảng Tổng Hợp làm Sheet cuối cùng
+                const summaryTable = document.querySelector('.summary-table');
+                if (summaryTable) {
+                    let ws_summary = XLSX.utils.table_to_sheet(summaryTable, {raw: false});
+                    XLSX.utils.book_append_sheet(wb, ws_summary, "Tổng Hợp");
+                }
+                // Xuất file tải về
+                XLSX.writeFile(wb, "DuToanKinhPhi.xlsx");
+            } catch (err) {
+                console.error("Lỗi xuất Excel:", err);
+                alert("Vui lòng đợi Bảng tổng hợp loading xong số liệu trước khi kết xuất Excel!");
+            }
         }
     </script>
 </body>

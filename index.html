@@ -338,7 +338,7 @@
                 }
             }, 500);
         }
-        // 3. HÀM XUẤT EXCEL ĐA SHEET
+        // 3. HÀM XUẤT EXCEL ĐA SHEET VÀ CHUẨN HOÁ SỐ LIỆU ĐỂ TÍNH TOÁN
         function exportExcel() {
             try {
                 // Khởi tạo file Excel
@@ -349,27 +349,57 @@
                     const originalTable = iframeDoc.querySelector('table');
                     
                     if(originalTable) {
-                        // BƯỚC QUAN TRỌNG: Clrone (nhân bản) bảng để tránh làm hỏng giao diện thật
+                        // BƯỚC 1: Clone (nhân bản) bảng để tránh làm hỏng giao diện thật
                         let clonedTable = originalTable.cloneNode(true);
                         
-                        // Lôi giá trị từ <input> ra biến thành Text mềm
+                        // BƯỚC 2: Rút ruột giá trị từ <input> ra, cạo bỏ định dạng chữ thành SỐ THUẦN
                         let originalInputs = originalTable.querySelectorAll('input, select');
                         let clonedInputs = clonedTable.querySelectorAll('input, select');
                         
                         originalInputs.forEach((inp, i) => {
-                            let textNode = document.createTextNode(inp.value);
+                            let valStr = inp.value.trim();
+                            // Loại bỏ dấu chấm định dạng Việt Nam nếu đó là tiền (VD: 1.500.000 -> 1500000)
+                            if (/^-?\d{1,3}(\.\d{3})+$/.test(valStr) || (inp.classList && inp.classList.contains('money-input'))) {
+                                valStr = valStr.replace(/\./g, '');
+                            }
+                            
+                            let textNode = document.createTextNode(valStr);
+                            let parentTd = clonedInputs[i].closest('td');
+                            
+                            // Ép kiểu sang Number cho SheetJS hiểu đây là số
+                            if (parentTd && !isNaN(valStr) && valStr !== '') {
+                                parentTd.setAttribute('data-t', 'n');
+                                parentTd.setAttribute('data-v', valStr);
+                            }
+                            
                             clonedInputs[i].parentNode.replaceChild(textNode, clonedInputs[i]);
                         });
                         // Xóa các nút bấm (như nút Xóa, + Thêm)
                         clonedTable.querySelectorAll('button').forEach(btn => btn.remove());
                         
-                        // Xóa chữ "Thao tác" trên Header
-                        clonedTable.querySelectorAll('th').forEach(th => {
-                            if(th.innerText.toLowerCase().includes('thao tác')) {
-                                th.innerText = "";
+                        // BƯỚC 3: Quét mọi ô trong bảng để lột sạch chữ "đ" và biến thành số thuần
+                        clonedTable.querySelectorAll('th, td').forEach(cell => {
+                            let text = cell.innerText.trim();
+                            
+                            // Xóa chữ "Thao tác" trên Header
+                            if(cell.tagName.toLowerCase() === 'th' && text.toLowerCase().includes('thao tác')) {
+                                cell.innerText = "";
+                                return;
+                            }
+                            // Bắt mọi ô có đuôi "đ" hoặc dấu "-" đại diện cho 0
+                            if (text.endsWith('đ') || text.endsWith(' đ') || text === '-') {
+                                let clean = text.replace(/đ/g, '').trim().replace(/\./g, '');
+                                if (clean === '-') clean = "0";
+                                
+                                if (!isNaN(clean) && clean !== '') {
+                                    // Bơm thuộc tính Dữ liệu chuẩn (Number) cho file Excel nhận diện
+                                    cell.setAttribute('data-t', 'n');
+                                    cell.setAttribute('data-v', clean);
+                                    cell.innerText = clean;
+                                }
                             }
                         });
-                        // Chuyển khối HTML nàỳ thành Sheet 
+                        // Chuyển khối HTML nàỳ thành Sheet (chế độ raw=true để ưu tiên data-t)
                         let ws = XLSX.utils.table_to_sheet(clonedTable, { raw: true });
                         XLSX.utils.book_append_sheet(wb, ws, "K" + (index + 1));
                     }
@@ -377,7 +407,21 @@
                 // Nhét Bảng Tổng Hợp làm Sheet cuối cùng
                 const summaryTable = document.querySelector('.summary-table');
                 if (summaryTable) {
-                    let ws_summary = XLSX.utils.table_to_sheet(summaryTable, {raw: false});
+                    let clonedSummary = summaryTable.cloneNode(true);
+                    // Lột bỏ luôn chữ "đ" cho bảng tổng hợp
+                    clonedSummary.querySelectorAll('th, td').forEach(cell => {
+                        let text = cell.innerText.trim();
+                        if (text.endsWith('đ') || text.endsWith(' đ')) {
+                            let clean = text.replace(/đ/g, '').trim().replace(/\./g, '');
+                            if (!isNaN(clean) && clean !== '') {
+                                cell.setAttribute('data-t', 'n');
+                                cell.setAttribute('data-v', clean);
+                                cell.innerText = clean;
+                            }
+                        }
+                    });
+                    
+                    let ws_summary = XLSX.utils.table_to_sheet(clonedSummary, {raw: true});
                     XLSX.utils.book_append_sheet(wb, ws_summary, "Tổng Hợp");
                 }
                 // Xuất file tải về
